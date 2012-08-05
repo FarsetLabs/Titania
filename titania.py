@@ -25,8 +25,6 @@ from twittytwister import twitter
 
 #Global Vars
 HEARTBEAT = 1     ## Heartbeat time in seconds
-STRIKER_OP = 1    ## Assume that the striker is attached to the k8055 DAC
-STRIKER_TIME = 2  ## Time the striker is active (not counting RC time)
 
 class MessageLogger:
     """
@@ -75,6 +73,7 @@ class IRCBot(irc.IRCClient):
     # Custom functions
 
     def logged_msg(self,target,msg):
+        msg=msg.encode('ascii','replace')
         self.msg(target,msg)
         self.logger.log("<%s> %s" % (target,msg))
 
@@ -382,7 +381,12 @@ class hackerspace():
             return False
 
     def unlock_door(self,msg):
-        return self.api.authGet('/door')
+        try:
+            r=self.api.openDoor()
+            r=r['response']
+        except Exception as E:
+            r= "%s"%E
+        return r
 
     def heartbeat(self):
         self.state_changed()
