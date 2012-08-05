@@ -108,7 +108,7 @@ class IRCBot(irc.IRCClient):
         elif msg.startswith("open"):
             msg = string.join(msg.split()[1:]).strip()
             txt = "%s remotely opened the door: %s"%(user,msg)
-            response = self.space.unlocking_door(msg)
+            response = self.space.unlock_door(msg)
             self.space.msg_q.add(txt,tweet=False,irc=True)
 
         else:
@@ -303,7 +303,7 @@ class hackerspace():
                 log.err("Invalid Auth Configuration:%s"%err)
 
             self.api = SpaceAPIClient.client(authpair=authpair,base=base)
-            self.config = convert(self.api.spaceState())
+            self.updateState()
             self.load_json_config(self.config)
             self.occupied = self.config['open']
 
@@ -345,7 +345,11 @@ class hackerspace():
     def status(self):
         return "open" if self.occupied else "closed"
 
+    def updateState(self):
+        self.config = convert(self.api.spaceState())
+
     def time_delta_string(self):
+        self.updateState() ##To fix date bug; farbot was reporting deltas from last change before initialisation as was only reading spacestate once!
         s = int(dt.strftime(dt.utcnow(),"%s")) - int(self.config['lastchange'])
         hours, remainder = divmod(s, 3600)
         minutes, seconds = divmod(remainder, 60)
@@ -376,6 +380,9 @@ class hackerspace():
             return True
         else:
             return False
+
+    def unlock_door(self,msg):
+        return self.api.authGet('/door')
 
     def heartbeat(self):
         self.state_changed()
