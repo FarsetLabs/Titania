@@ -37,7 +37,7 @@ class MessageLogger:
     def log(self, message):
         """Write a message to the file."""
         timestamp = time.strftime("[%H:%M:%S]", time.localtime(time.time()))
-        log.msg(message)
+        #log.msg(message) #Unecessary to log chat messages to debug log
         self.file.write('%s %s\n' % (timestamp, message))
         self.file.flush()
 
@@ -93,7 +93,7 @@ class IRCBot(irc.IRCClient):
 
     def on_pm(self, user, channel, msg):
         if user not in self.space.admins:
-            response = "Hello, I'm the IRC bot for %s, I'm afriad you're not allowed to do that, %s" % (self.space.name,user)
+            response = "Hello, I'm the IRC bot for %s, I'm afraid you're not allowed to do that, %s" % (self.space.name,user)
         # Allow authenticated users (see --admin flag) to tweet
         elif msg.startswith("tweet"):
             txt = "%s said: %s"%(user,string.join(msg.split()[1:]).strip())
@@ -104,14 +104,13 @@ class IRCBot(irc.IRCClient):
             txt = "%s said: %s"%(user,string.join(msg.split()[1:]).strip())
             self.space.msg_q.add(txt,tweet=False,irc=True)
             response = "your message has been queued"
-        elif msg.startswith("open"):
+        elif msg.startswith("open door"):
             msg = string.join(msg.split()[1:]).strip()
             txt = "%s remotely opened the door: %s"%(user,msg)
             response = self.space.unlock_door(msg)
             self.space.msg_q.add(txt,tweet=False,irc=True)
-
         else:
-            response = "Successfully authenticated: %s"%(pprint.pformat(self.space.config))
+            response = "Successfully authenticated"
 
         self.logged_msg(user,response)
 
@@ -291,6 +290,10 @@ class hackerspace():
             log.err("Overriding chan:%s with %s due to override"%(self.irc_chan,args.chan))
             self.irc_chan="#%s"%args.chan
 
+    def error_bcast(self,msg):
+        self.msg_q.add(msg,tweet=False,irc=True)
+        log.err(msg)
+
     def client_init(self,args):
         if hasattr(args,'auth_file'):
             auth=simplejson.load(open(args.auth_file,'r'))
@@ -299,7 +302,7 @@ class hackerspace():
                 authpair = auth['api_authpair']
                 base = auth['api_base']
             except KeyError as err:
-                log.err("Invalid Auth Configuration:%s"%err)
+                self.error_bcast("Invalid Auth Configuration:%s"%err)
 
             self.api = SpaceAPIClient.client(authpair=authpair,base=base)
             self.updateState()
@@ -313,13 +316,13 @@ class hackerspace():
                 try:
                     self.twitter = twitterClient(auth)
                 except Exception, err:
-                    log.err('Twitter could not be loaded (IRC might fail too):%s'%err)
+                    self.error_bcast('Twitter could not be loaded (IRC might fail too):%s'%err)
                     self.twitter = False
             else:
-                log.err('Twitter explicitly disabled by console flag')
+                self.error_bcast('Twitter explicitly disabled by console flag')
                 self.twitter = False
         else:
-            log.err('No Credentials for twitter/spaceapi loaded')
+            self.error_bcast('No Credentials for twitter/spaceapi loaded')
 
         # IRC
         self.irc_f = IRCBotFactory(self)
@@ -339,13 +342,17 @@ class hackerspace():
             self.irc_chan = string.strip(irc.path,'/')
             log.msg("Using Net:%s Chan:%s"%(self.irc_net, self.irc_chan))
         except KeyError as err:
-            log.err("Cannot Load Space Configuration: %s"%err)
+            self.error_bcast("Cannot Load Space Configuration: %s"%err)
 
     def status(self):
         return "open" if self.occupied else "closed"
 
     def updateState(self):
-        self.config = convert(self.api.spaceState())
+        try:
+            self.config = convert(self.api.spaceState(debug=True)) #Debug used to ensure authentication validity
+        except AuthenticationException as err:
+            self.error_bcast("Cannot Authenticate with SpaceAPI service:%s"%err)
+            raise err
 
     def time_delta_string(self):
         self.updateState() ##To fix date bug; farbot was reporting deltas from last change before initialisation as was only reading spacestate once!
@@ -361,7 +368,7 @@ class hackerspace():
 
     def state_changed(self):
         try:
-            state = not self.api.buttonDownState()
+            state = self.api.buttonDownState()
         except ValueError as err:
             log.err("%s"%err)
             return False
